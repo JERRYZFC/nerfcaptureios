@@ -40,7 +40,7 @@ def parse_args():
 
 def offline_training_loop(config: dict):
     # Load the dataset
-    data_dir = Path(config['data']['basedir'])
+    data_dir = Path(config['data']['basedir']).resolve()
     if not data_dir.exists():
         print(f"Data directory {data_dir} not found.")
         sys.exit(1)
@@ -384,9 +384,9 @@ def offline_training_loop(config: dict):
     params['keyframe_time_indices'] = np.array(keyframe_time_indices)
     
     # Save Parameters
-    output_dir = os.path.join(config["workdir"], config["run_name"])
-    save_params(params, output_dir)
-    print("Saved SplaTAM Splat to: ", output_dir)
+    output_dir = (Path(config["workdir"]) / config["run_name"]).resolve()
+    save_params(params, str(output_dir))
+    print("Saved SplaTAM Splat to: ", str(output_dir))
 
 
 if __name__ == "__main__":
@@ -401,12 +401,10 @@ if __name__ == "__main__":
     seed_everything(seed=experiment.config['seed'])
 
     # Create Results Directory and Copy Config
-    results_dir = os.path.join(
-        experiment.config["workdir"], experiment.config["run_name"]
-    )
+    results_dir = (Path(experiment.config["workdir"]) / experiment.config["run_name"]).resolve()
     if not experiment.config['load_checkpoint']:
-        os.makedirs(results_dir, exist_ok=True)
-        shutil.copy(args.config, os.path.join(results_dir, "config.py"))
+        results_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy(args.config, results_dir / "config.py")
 
     config = experiment.config
     if "gaussian_distribution" not in config:

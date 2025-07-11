@@ -48,6 +48,9 @@ config = {
         "use_depth_loss_thres": False,
         "depth_loss_thres": 100000,
         "ignore_outlier_depth_loss": False,
+        "use_uncertainty_for_loss_mask": False,
+        "use_uncertainty_for_loss": False,
+        "use_chamfer": False,
         "loss_weights": {
             "im": 0.0,
             "depth": 0.0,
@@ -90,7 +93,7 @@ config = {
         "pruning_dict": {
             "start_after": 0,
             "remove_big_after": 0,
-            "stop_pruning_after": 20,
+            "stop_after": 20,
             "prune_every": 20,
             "removal_opacity_threshold": 0.4,
             "final_removal_opacity_threshold": 0.6,
@@ -100,7 +103,7 @@ config = {
         "densify_dict": {
             "start_after": 100,
             "remove_big_after": 3000,
-            "stop_densifying_after": 5000,
+            "stop_after": 5000,
             "densify_every": 100,
             "grad_thresh": 0.0002,
             "num_to_split_into": 2,

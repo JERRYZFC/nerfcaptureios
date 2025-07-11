@@ -14,22 +14,21 @@ class ARViewModel: NSObject, ARSessionDelegate, ObservableObject {
     @Published var processedConfidenceImage: UIImage?
     @Published var showDepthMap: Bool = true
     @Published var showConfidenceMap: Bool = true
-    @Published var isRecording: Bool = false
+    @Published var isSessionActive: Bool = false
     private var datasetWriter: DatasetWriter?
+    private var currentFrame: ARFrame?
     
     private var lastDepthUpdate: TimeInterval = 0
     private let depthUpdateInterval: TimeInterval = 0.1 // 10fps (1/10秒)
     
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
+        self.currentFrame = frame
+        
         let currentTime = CACurrentMediaTime()
         if currentTime - lastDepthUpdate < depthUpdateInterval {
             return
         }
         lastDepthUpdate = currentTime
-
-        if isRecording {
-            datasetWriter?.addFrame(frame: frame)
-        }
 
         // Update previews
         if showDepthMap, let depthMap = frame.sceneDepth?.depthMap {
@@ -40,16 +39,23 @@ class ARViewModel: NSObject, ARSessionDelegate, ObservableObject {
         }
     }
 
-    func startRecording() {
+    func startSession() {
         datasetWriter = DatasetWriter()
         datasetWriter?.initializeProject()
-        isRecording = true
+        isSessionActive = true
     }
 
-    func stopRecording() {
+    func finishSession() {
         datasetWriter?.finalizeProject()
         datasetWriter = nil
-        isRecording = false
+        isSessionActive = false
+    }
+    
+    func capturePhoto() {
+        guard isSessionActive, let frame = currentFrame else {
+            return
+        }
+        datasetWriter?.addFrame(frame: frame)
     }
     
     // MARK: - Private Image Processing and Saving

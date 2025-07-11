@@ -239,8 +239,8 @@ func writeDepthMapToTIFFWithLibTIFF(depthMap: CVPixelBuffer, url: URL) -> Bool {
     tiffImage.addFileDirectory(directory)
     
     TIFFWriter.writeTiff(withFile: url.path, andImage: tiffImage)
-    
     return true
+>>>>>>> main
 }
 
 func saveImage(image: CVPixelBuffer, url: URL) {

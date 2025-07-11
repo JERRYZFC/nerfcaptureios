@@ -6,8 +6,8 @@ seed = 0
 
 # !! IMPORTANT !!
 # Change this to the directory containing your offline dataset
-base_dir = "./250711135835" 
-scene_name = "" # Scene name is now derived from the basedir, so this can be empty
+base_dir = "./nerf250711143013" 
+scene_name = "nerf250711143013" # Scene name is now derived from the basedir, so this can be empty
 
 # The following parameters are now read from the transforms.json file in the dataset directory
 # full_res_width = 1920

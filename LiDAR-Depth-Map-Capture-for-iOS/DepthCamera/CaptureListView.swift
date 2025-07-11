@@ -331,7 +331,16 @@ struct CaptureDetailView: View {
     
     private func loadDepthImage() {
         DispatchQueue.global(qos: .userInitiated).async {
-            // UIImageは直接TIFFファイルを読み込める
+            // Prefer loading the pre-rendered visual depth map for better consistency
+            if let visualURL = capture.visualDepthURL,
+               let image = UIImage(contentsOfFile: visualURL.path) {
+                DispatchQueue.main.async {
+                    self.depthImage = image
+                }
+                return
+            }
+
+            // Fallback for older data: load the raw TIFF directly.
             if let depthImage = UIImage(contentsOfFile: capture.depthURL.path) {
                 DispatchQueue.main.async {
                     self.depthImage = depthImage
@@ -374,4 +383,3 @@ struct ShareSheet: UIViewControllerRepresentable {
     
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
-

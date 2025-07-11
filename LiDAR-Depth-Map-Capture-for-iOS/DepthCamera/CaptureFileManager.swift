@@ -15,6 +15,7 @@ struct CaptureItem: Identifiable {
     let timestamp: Date
     let depthURL: URL
     let imageURL: URL
+    let visualDepthURL: URL? // URL for the high-contrast visual depth map
     var thumbnail: UIImage?
     
     var formattedDate: String {
@@ -27,7 +28,8 @@ struct CaptureItem: Identifiable {
     var fileSize: String {
         let depthSize = (try? FileManager.default.attributesOfItem(atPath: depthURL.path)[.size] as? Int) ?? 0
         let imageSize = (try? FileManager.default.attributesOfItem(atPath: imageURL.path)[.size] as? Int) ?? 0
-        let totalSize = depthSize + imageSize
+        let visualDepthSize = (try? visualDepthURL.flatMap { try? FileManager.default.attributesOfItem(atPath: $0.path)[.size] as? Int }) ?? 0
+        let totalSize = depthSize + imageSize + visualDepthSize
         return ByteCountFormatter.string(fromByteCount: Int64(totalSize), countStyle: .file)
     }
 }
@@ -68,7 +70,6 @@ class CaptureFileManager: ObservableObject {
                         options: [.skipsHiddenFiles]
                     )
                     
-                    // Group files by timestamp
                     var fileGroups: [String: [URL]] = [:]
                     for file in files {
                         let filename = file.lastPathComponent
@@ -78,29 +79,30 @@ class CaptureFileManager: ObservableObject {
                         }
                     }
                     
-                    // Create CaptureItems
                     for (timestamp, urls) in fileGroups {
-                        guard let depthURL = urls.first(where: { $0.lastPathComponent.contains("_depth.tiff") }),
-                              let imageURL = urls.first(where: { $0.lastPathComponent.contains("_image.jpg") }) else {
+                        guard let depthURL = urls.first(where: { $0.pathExtension == "tiff" }),
+                              let imageURL = urls.first(where: { $0.pathExtension == "jpg" }) else {
                             continue
                         }
+                        
+                        // Find the visual depth map, which is optional for backward compatibility
+                        let visualDepthURL = urls.first(where: { $0.lastPathComponent.contains("_depth_visual.png") })
                         
                         let timestampDouble = Double(timestamp) ?? 0
                         let date = Date(timeIntervalSince1970: timestampDouble)
                         
-                        // Generate thumbnail
                         let thumbnail = self.generateThumbnail(from: imageURL)
                         
                         items.append(CaptureItem(
                             timestamp: date,
                             depthURL: depthURL,
                             imageURL: imageURL,
+                            visualDepthURL: visualDepthURL,
                             thumbnail: thumbnail
                         ))
                     }
                 }
                 
-                // Sort by date (newest first)
                 items.sort { $0.timestamp > $1.timestamp }
                 
                 DispatchQueue.main.async {
@@ -120,14 +122,14 @@ class CaptureFileManager: ObservableObject {
         do {
             try FileManager.default.removeItem(at: capture.depthURL)
             try FileManager.default.removeItem(at: capture.imageURL)
+            if let visualURL = capture.visualDepthURL {
+                try FileManager.default.removeItem(at: visualURL)
+            }
             
-            // Remove from array
             captures.removeAll { $0.id == capture.id }
             
-            // Check if directory is empty and remove if so
             let directory = capture.depthURL.deletingLastPathComponent()
-            let contents = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-            if contents.isEmpty {
+            if let contents = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil), contents.isEmpty {
                 try FileManager.default.removeItem(at: directory)
             }
         } catch {
@@ -136,7 +138,11 @@ class CaptureFileManager: ObservableObject {
     }
     
     func shareCapture(_ capture: CaptureItem) -> [Any] {
-        return [capture.imageURL, capture.depthURL]
+        var itemsToShare: [Any] = [capture.imageURL, capture.depthURL]
+        if let visualURL = capture.visualDepthURL {
+            itemsToShare.append(visualURL)
+        }
+        return itemsToShare
     }
     
     private func generateThumbnail(from imageURL: URL) -> UIImage? {

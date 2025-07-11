@@ -50,7 +50,7 @@ struct CaptureButton: View {
                     showPulse = true
                 }
                 
-                model.saveDepthMap()
+                model.saveCapture()
                 
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
@@ -68,4 +68,3 @@ struct CaptureButton: View {
         }
     }
 }
-

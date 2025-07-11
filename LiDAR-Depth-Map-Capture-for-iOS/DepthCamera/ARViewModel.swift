@@ -6,7 +6,8 @@
 //
 
 import ARKit
-
+import UIKit
+import tiff_ios
 
 class ARViewModel: NSObject, ARSessionDelegate, ObservableObject {
     private var latestDepthMap: CVPixelBuffer?
@@ -25,28 +26,26 @@ class ARViewModel: NSObject, ARSessionDelegate, ObservableObject {
     
     private var lastDepthUpdate: TimeInterval = 0
     private let depthUpdateInterval: TimeInterval = 0.1 // 10fps (1/10秒)
+    
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         latestDepthMap = frame.sceneDepth?.depthMap
         latestImage = frame.capturedImage
         let currentTime = CACurrentMediaTime()
         
         if currentTime - lastDepthUpdate >= depthUpdateInterval {
-            lastDepthUpdate = currentTime  // タイマーを更新
+            lastDepthUpdate = currentTime
             
-            // DepthMapの処理と表示
             if showDepthMap, let depthMap = frame.sceneDepth?.depthMap {
                 processDepthMap(depthMap)
             }
 
-            // ConfidenceMapの処理と表示
             if showConfidenceMap, let confidenceMap = frame.sceneDepth?.confidenceMap {
                 processConfidenceMap(confidenceMap)
             }
         }
-        
     }
     
-    func saveDepthMap() {
+    func saveCapture() {
         guard let depthMap = latestDepthMap, let image = latestImage else {
             print("Depth map or image is not available.")
             return
@@ -66,77 +65,51 @@ class ARViewModel: NSObject, ARSessionDelegate, ObservableObject {
         }
         
         let timestamp = Date().timeIntervalSince1970
-        let depthFileURL = dateDirURL.appendingPathComponent("\(timestamp)_depth.tiff")
-        let imageFileURL = dateDirURL.appendingPathComponent("\(timestamp)_image.jpg")
-        
-        writeDepthMapToTIFFWithLibTIFF(depthMap: depthMap, url: depthFileURL)
+        let baseFilename = "\(timestamp)"
+        let depthFileURL = dateDirURL.appendingPathComponent("\(baseFilename)_depth.tiff")
+        let imageFileURL = dateDirURL.appendingPathComponent("\(baseFilename)_image.jpg")
+        let visualDepthURL = dateDirURL.appendingPathComponent("\(baseFilename)_depth_visual.png")
+
+        // Save raw float data, color image, and the new visualized depth map
+        writeDepthMapToTIFF(depthMap: depthMap, url: depthFileURL)
         saveImage(image: image, url: imageFileURL)
         
-        
-        
-        
+        if let visualImage = createVisualDepthImage(from: depthMap), let pngData = visualImage.pngData() {
+            do {
+                try pngData.write(to: visualDepthURL)
+                print("Visual depth map saved to \(visualDepthURL)")
+            } catch {
+                print("Failed to save visual depth map: \(error)")
+            }
+        }
         
         let uiImage = UIImage(ciImage: CIImage(cvPixelBuffer: image))
-        
         
         DispatchQueue.main.async {
             self.lastCapture = uiImage
             self.lastCaptureURL = imageFileURL
             self.captureSuccessful = true
             
-            // Reset after animation
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 self.captureSuccessful = false
             }
         }
      
-        
-        
-        print("Depth map saved to \(depthFileURL)")
+        print("Raw depth map saved to \(depthFileURL)")
         print("Image saved to \(imageFileURL)")
     }
-}
-
-
-
-extension ARViewModel {
-    func resizePixelBuffer(
-        _ pixelBuffer: CVPixelBuffer,
-        to size: CGSize
-    ) -> CVPixelBuffer? {
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        let scale = min(
-            size.width / CGFloat(CVPixelBufferGetWidth(pixelBuffer)),
-            size.height / CGFloat(CVPixelBufferGetHeight(pixelBuffer))
-        )
-        let scaledImage = ciImage.transformed(by: CGAffineTransform(
-            scaleX: scale,
-            y: scale
-        ))
-
-        let context = CIContext(options: nil)
-        var outputPixelBuffer: CVPixelBuffer?
-        CVPixelBufferCreate(
-            kCFAllocatorDefault,
-            Int(size.width),
-            Int(size.height),
-            CVPixelBufferGetPixelFormatType(pixelBuffer),
-            nil,
-            &outputPixelBuffer
-        )
-
-        if let outputPixelBuffer = outputPixelBuffer {
-            context.render(scaledImage, to: outputPixelBuffer)
-            return outputPixelBuffer
-        }
-        return nil
-    }
-}
-
-// DepthMapを可視化する関数を追加
-extension ARViewModel {
-    // DepthMapを可視化する関数
+    
+    // MARK: - Private Image Processing and Saving
+    
     private func processDepthMap(_ depthMap: CVPixelBuffer) {
+        if let image = createVisualDepthImage(from: depthMap, rotate: true) {
+            DispatchQueue.main.async { [weak self] in
+                self?.processedDepthImage = image
+            }
+        }
+    }
+
+    private func createVisualDepthImage(from depthMap: CVPixelBuffer, rotate: Bool = false) -> UIImage? {
         CVPixelBufferLockBaseAddress(depthMap, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(depthMap, .readOnly) }
 
@@ -149,15 +122,15 @@ extension ARViewModel {
         for y in 0..<height {
             for x in 0..<width {
                 let depth = buffer?[y * width + x] ?? 0
-                // 深度を0-1の範囲に正規化（例：0-5メートルを想定）
+                // Use the same normalization as the original preview logic
                 let normalizedDepth = min(max(depth / 5.0, 0.0), 1.0)
                 let pixel = UInt8(normalizedDepth * 255.0)
                 
                 let index = (y * width + x) * 4
-                normalizedData[index] = pixel     // R
-                normalizedData[index + 1] = pixel // G
-                normalizedData[index + 2] = pixel // B
-                normalizedData[index + 3] = 255   // A
+                normalizedData[index] = pixel
+                normalizedData[index + 1] = pixel
+                normalizedData[index + 2] = pixel
+                normalizedData[index + 3] = 255
             }
         }
 
@@ -173,17 +146,15 @@ extension ARViewModel {
             space: colorSpace,
             bitmapInfo: bitmapInfo
         ),
-        let cgImage = context.makeImage() else { return }
+        let cgImage = context.makeImage() else { return nil }
 
-        DispatchQueue.main.async { [weak self] in
-            // 画像を90度回転
-            let rotatedImage = UIImage(cgImage: cgImage)
-                .rotate(radians: .pi/2) // 90度回転
-            self?.processedDepthImage = rotatedImage
+        let finalImage = UIImage(cgImage: cgImage)
+        if rotate {
+            return finalImage.rotate(radians: .pi/2)
         }
+        return finalImage
     }
 
-    // ConfidenceMapを可視化する関数
     private func processConfidenceMap(_ confidenceMap: CVPixelBuffer) {
         CVPixelBufferLockBaseAddress(confidenceMap, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(confidenceMap, .readOnly) }
@@ -199,26 +170,13 @@ extension ARViewModel {
                 let confidence = buffer?[y * width + x] ?? 0
                 let index = (y * width + x) * 4
                 
-                // 信頼度に基づいて色を設定
                 switch confidence {
-                case 0:  // 信頼度なし
-                    rgbaData[index] = 255    // R - 赤
-                    rgbaData[index + 1] = 0  // G
-                    rgbaData[index + 2] = 0  // B
-                case 1:  // 低信頼度
-                    rgbaData[index] = 255    // R - 黄
-                    rgbaData[index + 1] = 255  // G
-                    rgbaData[index + 2] = 0    // B
-                case 2:  // 高信頼度
-                    rgbaData[index] = 0      // R - 緑
-                    rgbaData[index + 1] = 255  // G
-                    rgbaData[index + 2] = 0    // B
-                default:  // 最高信頼度
-                    rgbaData[index] = 0      // R - 青
-                    rgbaData[index + 1] = 0    // G
-                    rgbaData[index + 2] = 255  // B
+                case 0: rgbaData[index]=255; rgbaData[index+1]=0; rgbaData[index+2]=0
+                case 1: rgbaData[index]=255; rgbaData[index+1]=255; rgbaData[index+2]=0
+                case 2: rgbaData[index]=0; rgbaData[index+1]=255; rgbaData[index+2]=0
+                default: rgbaData[index]=0; rgbaData[index+1]=0; rgbaData[index+2]=255
                 }
-                rgbaData[index + 3] = 255   // A - 完全な不透明度
+                rgbaData[index + 3] = 255
             }
         }
 
@@ -237,12 +195,61 @@ extension ARViewModel {
         let cgImage = context.makeImage() else { return }
 
         DispatchQueue.main.async { [weak self] in
-            // 画像を90度回転
-            let rotatedImage = UIImage(cgImage: cgImage)
-                .rotate(radians: .pi/2) // 90度回転
-            self?.processedConfidenceImage = rotatedImage
+            self?.processedConfidenceImage = UIImage(cgImage: cgImage).rotate(radians: .pi/2)
         }
+    }
+    
+    private func writeDepthMapToTIFF(depthMap: CVPixelBuffer, url: URL) -> Bool {
+        let width = CVPixelBufferGetWidth(depthMap)
+        let height = CVPixelBufferGetHeight(depthMap)
+        
+        CVPixelBufferLockBaseAddress(depthMap, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(depthMap, .readOnly) }
+        
+        guard let baseAddress = CVPixelBufferGetBaseAddress(depthMap) else { return false }
+        let bytesPerRow = CVPixelBufferGetBytesPerRow(depthMap)
+        
+        guard let rasters = TIFFRasters(width: Int32(width), andHeight: Int32(height), andSamplesPerPixel: 1, andSingleBitsPerSample: 32) else { return false }
+        
+        for y in 0..<height {
+            let pixelBytes = baseAddress.advanced(by: y * bytesPerRow)
+            let pixelBuffer = UnsafeBufferPointer<Float>(start: pixelBytes.assumingMemoryBound(to: Float.self), count: width)
+            for x in 0..<width {
+                rasters.setFirstPixelSampleAtX(Int32(x), andY: Int32(y), withValue: NSDecimalNumber(value: pixelBuffer[x]))
+            }
+        }
+        
+        let rowsPerStrip = UInt16(rasters.calculateRowsPerStrip(withPlanarConfiguration: Int32(TIFF_PLANAR_CONFIGURATION_CHUNKY)))
+        
+        guard let directory = TIFFFileDirectory() else { return false }
+        directory.setImageWidth(UInt16(width))
+        directory.setImageHeight(UInt16(height))
+        directory.setBitsPerSampleAsSingleValue(32)
+        directory.setCompression(UInt16(TIFF_COMPRESSION_NO))
+        directory.setPhotometricInterpretation(UInt16(TIFF_PHOTOMETRIC_INTERPRETATION_BLACK_IS_ZERO))
+        directory.setSamplesPerPixel(1)
+        directory.setRowsPerStrip(rowsPerStrip)
+        directory.setPlanarConfiguration(UInt16(TIFF_PLANAR_CONFIGURATION_CHUNKY))
+        directory.setSampleFormatAsSingleValue(UInt16(TIFF_SAMPLE_FORMAT_FLOAT))
+        directory.writeRasters = rasters
+        
+        guard let tiffImage = TIFFImage() else { return false }
+        tiffImage.addFileDirectory(directory)
+        
+        return TIFFWriter.writeTiff(withFile: url.path, andImage: tiffImage)
+    }
 
+    private func saveImage(image: CVPixelBuffer, url: URL) {
+        let ciImage = CIImage(cvPixelBuffer: image)
+        let context = CIContext()
+        if let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+           let jpegData = context.jpegRepresentation(of: ciImage, colorSpace: colorSpace, options: [:]) {
+            do {
+                try jpegData.write(to: url)
+            } catch {
+                print("Failed to save image: \(error)")
+            }
+        }
     }
 }
 
@@ -251,18 +258,15 @@ extension UIImage {
         var newSize = CGRect(origin: CGPoint.zero, size: self.size)
             .applying(CGAffineTransform(rotationAngle: CGFloat(radians)))
             .size
-        // Trim off the extremely small float value to prevent core graphics from rounding it up
         newSize.width = floor(newSize.width)
         newSize.height = floor(newSize.height)
 
         UIGraphicsBeginImageContextWithOptions(newSize, false, self.scale)
-        let context = UIGraphicsGetCurrentContext()!
+        guard let context = UIGraphicsGetCurrentContext() else { return nil }
 
-        // Move origin to middle
         context.translateBy(x: newSize.width/2, y: newSize.height/2)
-        // Rotate around middle
         context.rotate(by: CGFloat(radians))
-        // Draw the image at its center
+        
         let rect = CGRect(
             x: -self.size.width/2,
             y: -self.size.height/2,
@@ -277,4 +281,3 @@ extension UIImage {
         return newImage
     }
 }
-

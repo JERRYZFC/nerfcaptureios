@@ -165,29 +165,24 @@ struct ContentView : View {
                         .frame(width: width * 0.9, height: height * 0.9)
                         .scaleEffect(0.95)
                     
-                    // Success indicator overlay - centered checkmark
-                    if arViewModel.captureSuccessful {
-                        ZStack {
-                            // Background blur effect
-                            Color.white.opacity(0.2)
-                                .ignoresSafeArea()
-                                .blur(radius: 50)
-                                .transition(.opacity)
-                            
-                            // Checkmark animation
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 80, weight: .light))
-                                .foregroundColor(Color.green)
-                                .shadow(color: Color.green.opacity(0.5), radius: 20, x: 0, y: 0)
-                                .scaleEffect(arViewModel.captureSuccessful ? 1.0 : 0.5)
-                                .opacity(arViewModel.captureSuccessful ? 1.0 : 0.0)
-                                .animation(.spring(response: 0.5, dampingFraction: 0.6), value: arViewModel.captureSuccessful)
+                    if arViewModel.isRecording {
+                        VStack {
+                            HStack {
+                                Circle()
+                                    .foregroundColor(.red)
+                                    .frame(width: 15, height: 15)
+                                Text("REC")
+                                    .foregroundColor(.white)
+                                    .font(.headline)
+                                Spacer()
+                            }
+                            .padding()
+                            Spacer()
                         }
-                        .allowsHitTesting(false)
                     }
                     
                     CaptureButtonPanelView(model: arViewModel, width: geometry.size.width)
-                        .padding(.bottom, 30)
+                        
                 }
             }
         }
@@ -260,4 +255,3 @@ func saveImage(image: CVPixelBuffer, url: URL) {
         }
     }
 }
-

@@ -105,14 +105,23 @@ struct DepthMapDetailView: View {
     
     private func loadDepthData() {
         DispatchQueue.global(qos: .userInitiated).async {
-            // まず表示用の画像を読み込む
-            if let image = UIImage(contentsOfFile: depthURL.path) {
-                DispatchQueue.main.async {
-                    self.depthImage = image
-                }
+            // Prioritize the visual PNG for display
+            let displayURL = depthURL.deletingPathExtension().appendingPathExtension("png")
+            var imageToShow: UIImage?
+
+            if FileManager.default.fileExists(atPath: displayURL.path),
+               let image = UIImage(contentsOfFile: displayURL.path) {
+                imageToShow = image
+            } else if let image = UIImage(contentsOfFile: depthURL.path) {
+                // Fallback to TIFF if visual PNG doesn't exist
+                imageToShow = image
             }
             
-            // TIFFからDepthデータを読み込む
+            DispatchQueue.main.async {
+                self.depthImage = imageToShow
+            }
+            
+            // Always load the raw data from TIFF for depth value picking
             loadDepthValuesFromTIFF()
         }
     }

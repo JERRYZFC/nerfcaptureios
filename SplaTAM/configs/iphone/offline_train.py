@@ -76,7 +76,7 @@ config = dict(
         stride=1,
     ),
     tracking=dict(
-        use_gt_poses=True, # Use GT Poses for Tracking in offline mode
+        use_gt_poses=False, # Use GT Poses for Tracking in offline mode
         forward_prop=True, # Forward Propagate Poses
         visualize_tracking_loss=False, # Visualize Tracking Diff Images
         num_iters=tracking_iters,

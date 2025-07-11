@@ -236,7 +236,8 @@ class ARViewModel: NSObject, ARSessionDelegate, ObservableObject {
         guard let tiffImage = TIFFImage() else { return false }
         tiffImage.addFileDirectory(directory)
         
-        return TIFFWriter.writeTiff(withFile: url.path, andImage: tiffImage)
+        TIFFWriter.writeTiff(withFile: url.path, andImage: tiffImage)
+        return true
     }
 
     private func saveImage(image: CVPixelBuffer, url: URL) {

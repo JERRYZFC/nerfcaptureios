@@ -9,6 +9,18 @@ seed = 0
 base_dir = "./nerf250711143013" 
 scene_name = "nerf250711143013" # Scene name is now derived from the basedir, so this can be empty
 
+
+#cmd
+
+# python SplaTAM/scripts/offline_train.py --config SplaTAM/configs/iphone/offline_train.py
+# python SplaTAM\scripts\export_ply.py .\experiments\offline\nerf250711143013\SplaTAM_iPhone_Offline\config.py
+
+
+
+
+
+
+
 # The following parameters are now read from the transforms.json file in the dataset directory
 # full_res_width = 1920
 # full_res_height = 1440

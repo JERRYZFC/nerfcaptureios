@@ -1,13 +1,23 @@
 import Foundation
 
 struct Manifest: Codable {
-    let cameraType: String
-    let intrinsics: [[Double]]
+    var flX: Float
+    var flY: Float
+    var cX: Float
+    var cY: Float
+    var w: Int
+    var h: Int
+    var integerDepthScale: Float
     var frames: [Frame]
 
     enum CodingKeys: String, CodingKey {
-        case cameraType = "camera_type"
-        case intrinsics
+        case flX = "fl_x"
+        case flY = "fl_y"
+        case cX = "cx"
+        case cY = "cy"
+        case w
+        case h
+        case integerDepthScale = "integer_depth_scale"
         case frames
     }
 }
@@ -15,7 +25,7 @@ struct Manifest: Codable {
 struct Frame: Codable {
     let filePath: String
     let depthPath: String
-    let transformMatrix: [[Double]]
+    let transformMatrix: [[Float]]
 
     enum CodingKeys: String, CodingKey {
         case filePath = "file_path"

@@ -17,40 +17,46 @@ class DatasetWriter {
         let timestamp = formatter.string(from: Date())
         
         projectURL = documentsURL.appendingPathComponent(timestamp)
-        imagesURL = projectURL.appendingPathComponent("images")
+        imagesURL = projectURL.appendingPathComponent("rgb") // Match SplaTAM's expected directory name
         
         do {
             try fileManager.createDirectory(at: imagesURL, withIntermediateDirectories: true, attributes: nil)
             print("Project directory created at: \(projectURL.path)")
         } catch {
             print("Error creating project directory: \(error)")
-            // Handle error appropriately
         }
         
-        // Manifest will be initialized with the first frame's data
         manifest = nil
     }
 
     func addFrame(frame: ARFrame) {
         let image = frame.capturedImage
-        guard let depthMap = frame.sceneDepth?.depthMap else { return }
+        guard let depthMap = frame.sceneDepth?.depthMap,
+              let depthPathURL = frame.sceneDepth?.depthMap else { return }
 
-        // Initialize manifest with camera intrinsics from the first frame
         if manifest == nil {
             let intrinsics = frame.camera.intrinsics
+            let imageResolution = frame.camera.imageResolution
             manifest = Manifest(
-                cameraType: "perspective",
-                intrinsics: [
-                    [Double(intrinsics[0, 0]), 0, Double(intrinsics[2, 0])],
-                    [0, Double(intrinsics[1, 1]), Double(intrinsics[2, 1])],
-                    [0, 0, 1]
-                ],
+                flX: intrinsics[0, 0],
+                flY: intrinsics[1, 1],
+                cX: intrinsics[2, 0],
+                cY: intrinsics[2, 1],
+                w: Int(imageResolution.width),
+                h: Int(imageResolution.height),
+                integerDepthScale: 1000.0 / 65535.0, // Standard scale for SplaTAM
                 frames: []
             )
         }
         
-        let imagePath = "images/\(frameCount).jpg"
-        let depthPath = "images/\(frameCount).depth.tiff"
+        let imagePath = "rgb/\(frameCount).jpg"
+        let depthPath = "depth/\(frameCount).tiff"
+        
+        // Create depth directory if it doesn't exist
+        let depthDirURL = projectURL.appendingPathComponent("depth")
+        if !FileManager.default.fileExists(atPath: depthDirURL.path) {
+            try? FileManager.default.createDirectory(at: depthDirURL, withIntermediateDirectories: true, attributes: nil)
+        }
         
         let imageURL = projectURL.appendingPathComponent(imagePath)
         let depthURL = projectURL.appendingPathComponent(depthPath)
@@ -159,12 +165,12 @@ class DatasetWriter {
 }
 
 extension simd_float4x4 {
-    func toFloat4x4() -> [[Double]] {
+    func toFloat4x4() -> [[Float]] {
         return [
-            [Double(columns.0.x), Double(columns.1.x), Double(columns.2.x), Double(columns.3.x)],
-            [Double(columns.0.y), Double(columns.1.y), Double(columns.2.y), Double(columns.3.y)],
-            [Double(columns.0.z), Double(columns.1.z), Double(columns.2.z), Double(columns.3.z)],
-            [Double(columns.0.w), Double(columns.1.w), Double(columns.2.w), Double(columns.3.w)]
+            [columns.0.x, columns.1.x, columns.2.x, columns.3.x],
+            [columns.0.y, columns.1.y, columns.2.y, columns.3.y],
+            [columns.0.z, columns.1.z, columns.2.z, columns.3.z],
+            [columns.0.w, columns.1.w, columns.2.w, columns.3.w]
         ]
     }
 }

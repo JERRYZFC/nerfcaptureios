@@ -104,7 +104,7 @@ struct ContentView : View {
                 }
                 
                 // Recording Indicator
-                if arViewModel.isRecording {
+                if arViewModel.isSessionActive {
                     VStack {
                         HStack {
                             Spacer()
@@ -112,7 +112,7 @@ struct ContentView : View {
                                 .fill(Color.red)
                                 .frame(width: 10, height: 10)
                                 .scaleEffect(1.2)
-                                .animation(Animation.easeInOut(duration: 0.6).repeatForever(autoreverses: true), value: arViewModel.isRecording)
+                                .animation(Animation.easeInOut(duration: 0.6).repeatForever(autoreverses: true), value: arViewModel.isSessionActive)
                             
                             Text("REC")
                                 .font(.system(size: 16, weight: .bold))

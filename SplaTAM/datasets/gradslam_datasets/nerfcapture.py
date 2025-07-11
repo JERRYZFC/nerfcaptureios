@@ -46,7 +46,7 @@ class NeRFCaptureDataset(GradSLAMDataset):
 
         # Init Intrinsics
         config_dict["camera_params"] = {}
-        config_dict["camera_params"]["png_depth_scale"] = 6553.5 # Depth is in mm
+        config_dict["camera_params"]["png_depth_scale"] = 1.0 # Depth is in meters
         config_dict["camera_params"]["image_height"] = self.cams_metadata["h"]
         config_dict["camera_params"]["image_width"] = self.cams_metadata["w"]
         config_dict["camera_params"]["fx"] = self.cams_metadata["fl_x"]

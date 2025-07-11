@@ -2,13 +2,6 @@ import SwiftUI
 import ARKit
 import RealityKit
 
-import ImageIO
-import MobileCoreServices
-import CoreGraphics
-import tiff_ios
-
-
-
 struct ContentView : View {
     @StateObject var arViewModel = ARViewModel()
     @State private var showDepthMap: Bool = true
@@ -25,10 +18,11 @@ struct ContentView : View {
             ZStack {
                 // Make the entire background black.
                 Color.black.edgesIgnoringSafeArea(.all)
+                
                 VStack {
-                    // コントロールパネルを上部に配置
+                    // Top control panel
                     HStack(spacing: 20) {
-                        // Depthマップ用のコントロール
+                        // Depth map controls
                         VStack(alignment: .center, spacing: 12) {
                             Button(action: {
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
@@ -38,29 +32,9 @@ struct ContentView : View {
                             }) {
                                 HStack(spacing: 8) {
                                     Image(systemName: showDepthMap ? "cube.fill" : "cube")
-                                        .font(.system(size: 16))
                                     Text("Depth")
-                                        .font(.system(size: 14, weight: .semibold))
                                 }
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 10)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .fill(showDepthMap ? 
-                                            LinearGradient(colors: [Color.blue, Color.blue.opacity(0.8)], 
-                                                         startPoint: .topLeading, 
-                                                         endPoint: .bottomTrailing) :
-                                            LinearGradient(colors: [Color.gray.opacity(0.3), Color.gray.opacity(0.2)], 
-                                                         startPoint: .topLeading, 
-                                                         endPoint: .bottomTrailing)
-                                        )
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 12)
-                                                .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                                        )
-                                )
-                                .shadow(color: showDepthMap ? Color.blue.opacity(0.3) : Color.clear, radius: 8, x: 0, y: 4)
+                                .modifier(ControlButtonModifier(isActive: showDepthMap, activeColor: .blue))
                             }
                             .scaleEffect(depthMapScale)
                             
@@ -69,22 +43,11 @@ struct ContentView : View {
                                     .resizable()
                                     .scaledToFit()
                                     .frame(width: width * 0.25, height: width * 0.25)
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .stroke(LinearGradient(colors: [Color.blue.opacity(0.6), Color.blue.opacity(0.2)], 
-                                                                 startPoint: .topLeading, 
-                                                                 endPoint: .bottomTrailing), lineWidth: 2)
-                                    )
-                                    .shadow(color: Color.blue.opacity(0.3), radius: 10, x: 0, y: 5)
-                                    .transition(.asymmetric(
-                                        insertion: .scale.combined(with: .opacity),
-                                        removal: .scale.combined(with: .opacity)
-                                    ))
+                                    .modifier(PreviewImageModifier(activeColor: .blue))
                             }
                         }
                         
-                        // Confidenceマップ用のコントロール
+                        // Confidence map controls
                         VStack(alignment: .center, spacing: 12) {
                             Button(action: {
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
@@ -94,29 +57,9 @@ struct ContentView : View {
                             }) {
                                 HStack(spacing: 8) {
                                     Image(systemName: showConfidenceMap ? "shield.fill" : "shield")
-                                        .font(.system(size: 16))
                                     Text("Confidence")
-                                        .font(.system(size: 14, weight: .semibold))
                                 }
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 10)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .fill(showConfidenceMap ? 
-                                            LinearGradient(colors: [Color.green, Color.green.opacity(0.8)], 
-                                                         startPoint: .topLeading, 
-                                                         endPoint: .bottomTrailing) :
-                                            LinearGradient(colors: [Color.gray.opacity(0.3), Color.gray.opacity(0.2)], 
-                                                         startPoint: .topLeading, 
-                                                         endPoint: .bottomTrailing)
-                                        )
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 12)
-                                                .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                                        )
-                                )
-                                .shadow(color: showConfidenceMap ? Color.green.opacity(0.3) : Color.clear, radius: 8, x: 0, y: 4)
+                                .modifier(ControlButtonModifier(isActive: showConfidenceMap, activeColor: .green))
                             }
                             .scaleEffect(confidenceMapScale)
                             
@@ -125,26 +68,15 @@ struct ContentView : View {
                                     .resizable()
                                     .scaledToFit()
                                     .frame(width: width * 0.25, height: width * 0.25)
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .stroke(LinearGradient(colors: [Color.green.opacity(0.6), Color.green.opacity(0.2)], 
-                                                                 startPoint: .topLeading, 
-                                                                 endPoint: .bottomTrailing), lineWidth: 2)
-                                    )
-                                    .shadow(color: Color.green.opacity(0.3), radius: 10, x: 0, y: 5)
-                                    .transition(.asymmetric(
-                                        insertion: .scale.combined(with: .opacity),
-                                        removal: .scale.combined(with: .opacity)
-                                    ))
+                                    .modifier(PreviewImageModifier(activeColor: .green))
                             }
                         }
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 50)
                     .background(
-                        LinearGradient(colors: [Color.black.opacity(0.9), Color.black.opacity(0.7), Color.clear], 
-                                     startPoint: .top, 
+                        LinearGradient(colors: [Color.black.opacity(0.9), Color.black.opacity(0.7), Color.clear],
+                                     startPoint: .top,
                                      endPoint: .bottom)
                             .ignoresSafeArea(edges: .top)
                             .allowsHitTesting(false)
@@ -152,42 +84,50 @@ struct ContentView : View {
                     
                     Spacer()
                     
-                    // メインのARView
+                    // Main ARView
                     ARViewContainer(arViewModel: arViewModel)
                         .clipShape(RoundedRectangle(cornerRadius: previewCornerRadius))
                         .overlay(
                             RoundedRectangle(cornerRadius: previewCornerRadius)
-                                .stroke(LinearGradient(colors: [Color.white.opacity(0.3), Color.white.opacity(0.1)], 
-                                                     startPoint: .topLeading, 
+                                .stroke(LinearGradient(colors: [Color.white.opacity(0.3), Color.white.opacity(0.1)],
+                                                     startPoint: .topLeading,
                                                      endPoint: .bottomTrailing), lineWidth: 1)
                         )
                         .shadow(color: Color.black.opacity(0.3), radius: 15, x: 0, y: 10)
                         .frame(width: width * 0.9, height: height * 0.9)
                         .scaleEffect(0.95)
                     
-                    // Success indicator overlay - centered checkmark
-                    if arViewModel.captureSuccessful {
-                        ZStack {
-                            // Background blur effect
-                            Color.white.opacity(0.2)
-                                .ignoresSafeArea()
-                                .blur(radius: 50)
-                                .transition(.opacity)
-                            
-                            // Checkmark animation
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 80, weight: .light))
-                                .foregroundColor(Color.green)
-                                .shadow(color: Color.green.opacity(0.5), radius: 20, x: 0, y: 0)
-                                .scaleEffect(arViewModel.captureSuccessful ? 1.0 : 0.5)
-                                .opacity(arViewModel.captureSuccessful ? 1.0 : 0.0)
-                                .animation(.spring(response: 0.5, dampingFraction: 0.6), value: arViewModel.captureSuccessful)
-                        }
-                        .allowsHitTesting(false)
-                    }
+                    Spacer()
                     
                     CaptureButtonPanelView(model: arViewModel, width: geometry.size.width)
                         .padding(.bottom, 30)
+                }
+                
+                // Recording Indicator
+                if arViewModel.isRecording {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            Circle()
+                                .fill(Color.red)
+                                .frame(width: 10, height: 10)
+                                .scaleEffect(1.2)
+                                .animation(Animation.easeInOut(duration: 0.6).repeatForever(autoreverses: true), value: arViewModel.isRecording)
+                            
+                            Text("REC")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.red)
+                        }
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .background(Color.black.opacity(0.6))
+                        .cornerRadius(10)
+                        .padding(.trailing)
+                        .padding(.top, geometry.safeAreaInsets.top)
+                        
+                        Spacer()
+                    }
+                    .transition(.opacity)
                 }
             }
         }
@@ -195,68 +135,53 @@ struct ContentView : View {
     }
 }
 
+// MARK: - View Modifiers for DRY principle
 
-func writeDepthMapToTIFFWithLibTIFF(depthMap: CVPixelBuffer, url: URL) -> Bool {
-    let width = CVPixelBufferGetWidth(depthMap)
-    let height = CVPixelBufferGetHeight(depthMap)
+struct ControlButtonModifier: ViewModifier {
+    let isActive: Bool
+    let activeColor: Color
     
-    CVPixelBufferLockBaseAddress(depthMap, CVPixelBufferLockFlags(rawValue: 0))
-    guard let baseAddress = CVPixelBufferGetBaseAddress(depthMap) else {
-        CVPixelBufferUnlockBaseAddress(depthMap, CVPixelBufferLockFlags(rawValue: 0))
-        return false
+    func body(content: Content) -> some View {
+        content
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundColor(.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isActive ?
+                        LinearGradient(colors: [activeColor, activeColor.opacity(0.8)],
+                                     startPoint: .topLeading,
+                                     endPoint: .bottomTrailing) :
+                        LinearGradient(colors: [Color.gray.opacity(0.3), Color.gray.opacity(0.2)],
+                                     startPoint: .topLeading,
+                                     endPoint: .bottomTrailing)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                    )
+            )
+            .shadow(color: isActive ? activeColor.opacity(0.3) : Color.clear, radius: 8, x: 0, y: 4)
     }
-    let bytesPerRow = CVPixelBufferGetBytesPerRow(depthMap)
-    
-    guard let rasters = TIFFRasters(width: Int32(width), andHeight: Int32(height), andSamplesPerPixel: 1, andSingleBitsPerSample: 32) else {
-        CVPixelBufferUnlockBaseAddress(depthMap, CVPixelBufferLockFlags(rawValue: 0))
-        return false
-    }
-    
-    for y in 0..<height {
-        let pixelBytes = baseAddress.advanced(by: y * bytesPerRow)
-        let pixelBuffer = UnsafeBufferPointer<Float>(start: pixelBytes.assumingMemoryBound(to: Float.self), count: width)
-        for x in 0..<width {
-            rasters.setFirstPixelSampleAtX(Int32(x), andY: Int32(y), withValue: NSDecimalNumber(value: pixelBuffer[x]))
-        }
-    }
-    
-    CVPixelBufferUnlockBaseAddress(depthMap, CVPixelBufferLockFlags(rawValue: 0))
-    
-    let rowsPerStrip = UInt16(rasters.calculateRowsPerStrip(withPlanarConfiguration: Int32(TIFF_PLANAR_CONFIGURATION_CHUNKY)))
-    
-    guard let directory = TIFFFileDirectory() else {
-        return false
-    }
-    directory.setImageWidth(UInt16(width))
-    directory.setImageHeight(UInt16(height))
-    directory.setBitsPerSampleAsSingleValue(32)
-    directory.setCompression(UInt16(TIFF_COMPRESSION_NO))
-    directory.setPhotometricInterpretation(UInt16(TIFF_PHOTOMETRIC_INTERPRETATION_BLACK_IS_ZERO))
-    directory.setSamplesPerPixel(1)
-    directory.setRowsPerStrip(rowsPerStrip)
-    directory.setPlanarConfiguration(UInt16(TIFF_PLANAR_CONFIGURATION_CHUNKY))
-    directory.setSampleFormatAsSingleValue(UInt16(TIFF_SAMPLE_FORMAT_FLOAT))
-    directory.writeRasters = rasters
-    
-    guard let tiffImage = TIFFImage() else {
-        return false
-    }
-    tiffImage.addFileDirectory(directory)
-    
-    TIFFWriter.writeTiff(withFile: url.path, andImage: tiffImage)
-    
-    return true
 }
 
-func saveImage(image: CVPixelBuffer, url: URL) {
-    let ciImage = CIImage(cvPixelBuffer: image)
-    let context = CIContext()
-    if let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
-       let jpegData = context.jpegRepresentation(of: ciImage, colorSpace: colorSpace, options: [:]) {
-        do {
-            try jpegData.write(to: url)
-        } catch {
-            print("Failed to save image: \(error)")
-        }
+struct PreviewImageModifier: ViewModifier {
+    let activeColor: Color
+    
+    func body(content: Content) -> some View {
+        content
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(LinearGradient(colors: [activeColor.opacity(0.6), activeColor.opacity(0.2)],
+                                         startPoint: .topLeading,
+                                         endPoint: .bottomTrailing), lineWidth: 2)
+            )
+            .shadow(color: activeColor.opacity(0.3), radius: 10, x: 0, y: 5)
+            .transition(.asymmetric(
+                insertion: .scale.combined(with: .opacity),
+                removal: .scale.combined(with: .opacity)
+            ))
     }
 }

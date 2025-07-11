@@ -1,171 +1,169 @@
 import Foundation
 import ARKit
-import Zip
+import tiff_ios
 
 class DatasetWriter {
-    
-    enum SessionState {
-        case notStarted
-        case started
-    }
-    
-    private var manifest: Manifest
-    private var projectName: String = ""
-    private var projectDir: URL?
-    private var imagesDir: URL?
-    
-    private var currentFrameCounter = 0
-    @Published var writerState: SessionState = .notStarted
-    
-    init() {
-        self.manifest = Manifest(
-            cameraAngleX: 0,
-            cameraAngleY: 0,
-            flX: 0,
-            flY: 0,
-            cx: 0,
-            cy: 0,
-            w: 0,
-            h: 0,
-            frames: []
-        )
+    private var projectURL: URL!
+    private var imagesURL: URL!
+    private var manifest: Manifest!
+    private var frameCount = 0
+
+    func initializeProject() {
+        let fileManager = FileManager.default
+        let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
+        
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyMMddHHmmss"
+        let timestamp = formatter.string(from: Date())
+        
+        projectURL = documentsURL.appendingPathComponent(timestamp)
+        imagesURL = projectURL.appendingPathComponent("images")
+        
+        do {
+            try fileManager.createDirectory(at: imagesURL, withIntermediateDirectories: true, attributes: nil)
+            print("Project directory created at: \(projectURL.path)")
+        } catch {
+            print("Error creating project directory: \(error)")
+            // Handle error appropriately
+        }
+        
+        // Manifest will be initialized with the first frame's data
+        manifest = nil
     }
 
-    func initializeProject() throws {
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyMMdd_HHmmss"
-        projectName = dateFormatter.string(from: Date())
-        
-        let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        projectDir = documentsDirectory.appendingPathComponent(projectName)
-        
-        guard let projectDir = projectDir else { return }
-        
-        if FileManager.default.fileExists(atPath: projectDir.path) {
-            throw NSError(domain: "DatasetWriter", code: 1, userInfo: [NSLocalizedDescriptionKey: "Project already exists"])
-        }
-        
-        imagesDir = projectDir.appendingPathComponent("images")
-        
-        guard let imagesDir = imagesDir else { return }
-        
-        try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true, attributes: nil)
-        
-        currentFrameCounter = 0
-        writerState = .started
-        print("Project initialized at: \(projectDir.path)")
-    }
-    
     func addFrame(frame: ARFrame) {
-        guard writerState == .started, let imagesDir = imagesDir else { return }
-        
-        // 1. Set manifest properties on the first frame
-        if manifest.w == 0 {
-            manifest.w = Int(frame.camera.imageResolution.width)
-            manifest.h = Int(frame.camera.imageResolution.height)
-            manifest.flX = frame.camera.intrinsics[0, 0]
-            manifest.flY = frame.camera.intrinsics[1, 1]
-            manifest.cx = frame.camera.intrinsics[2, 0]
-            manifest.cy = frame.camera.intrinsics[2, 1]
-            manifest.cameraAngleX = 2 * atan(Float(manifest.w) / (2 * manifest.flX))
-            manifest.cameraAngleY = 2 * atan(Float(manifest.h) / (2 * manifest.flY))
+        guard let image = frame.capturedImage, let depthMap = frame.sceneDepth?.depthMap else { return }
+
+        // Initialize manifest with camera intrinsics from the first frame
+        if manifest == nil {
+            let intrinsics = frame.camera.intrinsics
+            manifest = Manifest(
+                cameraType: "perspective",
+                intrinsics: [
+                    [Double(intrinsics[0, 0]), 0, Double(intrinsics[2, 0])],
+                    [0, Double(intrinsics[1, 1]), Double(intrinsics[2, 1])],
+                    [0, 0, 1]
+                ],
+                frames: []
+            )
         }
         
-        // 2. Prepare file paths
-        let frameName = "\(currentFrameCounter)"
-        let imageFileName = imagesDir.appendingPathComponent("\(frameName).jpg")
-        let depthFileName = imagesDir.appendingPathComponent("\(frameName).depth.tiff")
+        let imagePath = "images/\(frameCount).jpg"
+        let depthPath = "images/\(frameCount).depth.tiff"
         
-        // 3. Get data
-        let image = frame.capturedImage
-        guard let depthMap = frame.sceneDepth?.depthMap else {
-            print("Could not get depth map for frame \(currentFrameCounter)")
+        let imageURL = projectURL.appendingPathComponent(imagePath)
+        let depthURL = projectURL.appendingPathComponent(depthPath)
+        
+        // Save RGB image
+        saveImage(pixelBuffer: image, to: imageURL)
+        
+        // Save depth data as 32-bit float TIFF
+        writeDepthMapToTIFF(depthMap: depthMap, url: depthURL)
+        
+        // Get transform matrix
+        let transformMatrix = frame.camera.transform.toFloat4x4()
+        
+        let frameData = Frame(
+            filePath: imagePath,
+            depthPath: depthPath,
+            transformMatrix: transformMatrix
+        )
+        
+        manifest.frames.append(frameData)
+        frameCount += 1
+    }
+
+    func finalizeProject() {
+        guard manifest != nil else {
+            print("Manifest is nil, cannot finalize project.")
             return
         }
         
-        // 4. Create Frame metadata
-        let frameMetadata = Manifest.Frame(
-            filePath: "images/\(frameName).jpg",
-            depthPath: "images/\(frameName).depth.tiff",
-            transformMatrix: arrayFromTransform(frame.camera.transform),
-            timestamp: frame.timestamp
-        )
+        let transformsURL = projectURL.appendingPathComponent("transforms.json")
         
-        // 5. Write to disk asynchronously
-        DispatchQueue.global(qos: .background).async {
-            // Save RGB image
-            self.saveImage(pixelBuffer: image, url: imageFileName)
-            
-            // Save Depth TIFF
-            writeDepthMapToTIFFWithLibTIFF(depthMap: depthMap, url: depthFileName)
-            
-            DispatchQueue.main.async {
-                self.manifest.frames.append(frameMetadata)
-                self.currentFrameCounter += 1
-            }
-        }
-    }
-    
-    func finalizeProject(zip: Bool = true) {
-        guard writerState == .started, let projectDir = projectDir else { return }
-        
-        writerState = .notStarted
-        
-        let manifestPath = projectDir.appendingPathComponent("transforms.json")
-        
-        // Write manifest
-        writeManifestToPath(path: manifestPath)
-        
-        // Zip and clean up
-        DispatchQueue.global(qos: .background).async {
-            do {
-                if zip {
-                    _ = try Zip.quickZipFiles([projectDir], fileName: self.projectName)
-                    print("Project zipped to \(self.projectName).zip")
-                }
-                try FileManager.default.removeItem(at: projectDir)
-                print("Cleaned up project directory.")
-            } catch {
-                print("Could not zip or clean up project: \(error)")
-            }
-        }
-    }
-    
-    private func writeManifestToPath(path: URL) {
         let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes]
-        encoder.keyEncodingStrategy = .convertToSnakeCase
+        encoder.outputFormatting = .prettyPrinted
         
         do {
-            let data = try encoder.encode(manifest)
-            try data.write(to: path)
-            print("Manifest file saved to: \(path.path)")
+            let jsonData = try encoder.encode(manifest)
+            try jsonData.write(to: transformsURL)
+            print("transforms.json saved successfully.")
         } catch {
-            print("Failed to write manifest file: \(error)")
+            print("Error writing transforms.json: \(error)")
         }
+        
+        // Reset for next recording
+        frameCount = 0
+        manifest = nil
+        projectURL = nil
+        imagesURL = nil
     }
-    
-    private func saveImage(pixelBuffer: CVPixelBuffer, url: URL) {
+
+    // MARK: - Private Helper Functions
+
+    private func saveImage(pixelBuffer: CVPixelBuffer, to url: URL) {
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
         let context = CIContext()
         guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
-              let jpegData = context.jpegRepresentation(of: ciImage, colorSpace: colorSpace, options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.9]) else {
+              let jpegData = context.jpegRepresentation(of: ciImage, colorSpace: colorSpace, options: [:]) else {
             print("Failed to create JPEG data.")
             return
         }
+        
         do {
             try jpegData.write(to: url)
         } catch {
-            print("Failed to save image: \(error)")
+            print("Error saving image to \(url.path): \(error)")
         }
     }
-    
-    private func arrayFromTransform(_ transform: matrix_float4x4) -> [[Float]] {
+
+    private func writeDepthMapToTIFF(depthMap: CVPixelBuffer, url: URL) {
+        let width = CVPixelBufferGetWidth(depthMap)
+        let height = CVPixelBufferGetHeight(depthMap)
+        
+        CVPixelBufferLockBaseAddress(depthMap, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(depthMap, .readOnly) }
+        
+        guard let baseAddress = CVPixelBufferGetBaseAddress(depthMap) else { return }
+        
+        guard let rasters = TIFFRasters(width: Int32(width), andHeight: Int32(height), andSamplesPerPixel: 1, andSingleBitsPerSample: 32) else { return }
+        
+        let floatBuffer = baseAddress.assumingMemoryBound(to: Float32.self)
+        for y in 0..<height {
+            for x in 0..<width {
+                let value = floatBuffer[y * width + x]
+                rasters.setFirstPixelSampleAtX(Int32(x), andY: Int32(y), withValue: NSDecimalNumber(value: value))
+            }
+        }
+        
+        let rowsPerStrip = UInt16(rasters.calculateRowsPerStrip(withPlanarConfiguration: Int32(TIFF_PLANAR_CONFIGURATION_CHUNKY)))
+        
+        guard let directory = TIFFFileDirectory() else { return }
+        directory.setImageWidth(UInt16(width))
+        directory.setImageHeight(UInt16(height))
+        directory.setBitsPerSampleAsSingleValue(32)
+        directory.setCompression(UInt16(TIFF_COMPRESSION_NO))
+        directory.setPhotometricInterpretation(UInt16(TIFF_PHOTOMETRIC_INTERPRETATION_BLACK_IS_ZERO))
+        directory.setSamplesPerPixel(1)
+        directory.setRowsPerStrip(rowsPerStrip)
+        directory.setPlanarConfiguration(UInt16(TIFF_PLANAR_CONFIGURATION_CHUNKY))
+        directory.setSampleFormatAsSingleValue(UInt16(TIFF_SAMPLE_FORMAT_FLOAT))
+        directory.writeRasters = rasters
+        
+        guard let tiffImage = TIFFImage() else { return }
+        tiffImage.addFileDirectory(directory)
+        
+        TIFFWriter.writeTiff(withFile: url.path, andImage: tiffImage)
+    }
+}
+
+extension simd_float4x4 {
+    func toFloat4x4() -> [[Double]] {
         return [
-            [transform.columns.0.x, transform.columns.1.x, transform.columns.2.x, transform.columns.3.x],
-            [transform.columns.0.y, transform.columns.1.y, transform.columns.2.y, transform.columns.3.y],
-            [transform.columns.0.z, transform.columns.1.z, transform.columns.2.z, transform.columns.3.z],
-            [transform.columns.0.w, transform.columns.1.w, transform.columns.2.w, transform.columns.3.w]
+            [Double(columns.0.x), Double(columns.1.x), Double(columns.2.x), Double(columns.3.x)],
+            [Double(columns.0.y), Double(columns.1.y), Double(columns.2.y), Double(columns.3.y)],
+            [Double(columns.0.z), Double(columns.1.z), Double(columns.2.z), Double(columns.3.z)],
+            [Double(columns.0.w), Double(columns.1.w), Double(columns.2.w), Double(columns.3.w)]
         ]
     }
 }

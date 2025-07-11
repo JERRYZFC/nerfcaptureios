@@ -16,87 +16,42 @@ class ARViewModel: NSObject, ARSessionDelegate, ObservableObject {
     @Published var processedConfidenceImage: UIImage?
     @Published var showDepthMap: Bool = true
     @Published var showConfidenceMap: Bool = true
-    @Published var captureSuccessful: Bool = false
-    @Published var lastCapture: UIImage? = nil {
-        didSet {
-            print("lastCapture was set.")
-        }
-    }
-    @Published var lastCaptureURL: URL?
+    @Published var isRecording: Bool = false
+    private var datasetWriter: DatasetWriter?
     
     private var lastDepthUpdate: TimeInterval = 0
     private let depthUpdateInterval: TimeInterval = 0.1 // 10fps (1/10秒)
     
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
-        latestDepthMap = frame.sceneDepth?.depthMap
-        latestImage = frame.capturedImage
         let currentTime = CACurrentMediaTime()
-        
-        if currentTime - lastDepthUpdate >= depthUpdateInterval {
-            lastDepthUpdate = currentTime
-            
-            if showDepthMap, let depthMap = frame.sceneDepth?.depthMap {
-                processDepthMap(depthMap)
-            }
+        if currentTime - lastDepthUpdate < depthUpdateInterval {
+            return
+        }
+        lastDepthUpdate = currentTime
 
-            if showConfidenceMap, let confidenceMap = frame.sceneDepth?.confidenceMap {
-                processConfidenceMap(confidenceMap)
-            }
+        if isRecording {
+            datasetWriter?.addFrame(frame: frame)
+        }
+
+        // Update previews
+        if showDepthMap, let depthMap = frame.sceneDepth?.depthMap {
+            processDepthMap(depthMap)
+        }
+        if showConfidenceMap, let confidenceMap = frame.sceneDepth?.confidenceMap {
+            processConfidenceMap(confidenceMap)
         }
     }
-    
-    func saveCapture() {
-        guard let depthMap = latestDepthMap, let image = latestImage else {
-            print("Depth map or image is not available.")
-            return
-        }
-        
-        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyyMMdd"
-        let dateString = dateFormatter.string(from: Date())
-        let dateDirURL = documentsDir.appendingPathComponent(dateString)
-        
-        do {
-            try FileManager.default.createDirectory(at: dateDirURL, withIntermediateDirectories: true, attributes: nil)
-        } catch {
-            print("Failed to create directory: \(error)")
-            return
-        }
-        
-        let timestamp = Date().timeIntervalSince1970
-        let baseFilename = "\(timestamp)"
-        let depthFileURL = dateDirURL.appendingPathComponent("\(baseFilename)_depth.tiff")
-        let imageFileURL = dateDirURL.appendingPathComponent("\(baseFilename)_image.jpg")
-        let visualDepthURL = dateDirURL.appendingPathComponent("\(baseFilename)_depth_visual.png")
 
-        // Save raw float data, color image, and the new visualized depth map
-        writeDepthMapToTIFF(depthMap: depthMap, url: depthFileURL)
-        saveImage(image: image, url: imageFileURL)
-        
-        if let visualImage = createVisualDepthImage(from: depthMap), let pngData = visualImage.pngData() {
-            do {
-                try pngData.write(to: visualDepthURL)
-                print("Visual depth map saved to \(visualDepthURL)")
-            } catch {
-                print("Failed to save visual depth map: \(error)")
-            }
-        }
-        
-        let uiImage = UIImage(ciImage: CIImage(cvPixelBuffer: image))
-        
-        DispatchQueue.main.async {
-            self.lastCapture = uiImage
-            self.lastCaptureURL = imageFileURL
-            self.captureSuccessful = true
-            
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                self.captureSuccessful = false
-            }
-        }
-     
-        print("Raw depth map saved to \(depthFileURL)")
-        print("Image saved to \(imageFileURL)")
+    func startRecording() {
+        datasetWriter = DatasetWriter()
+        datasetWriter?.initializeProject()
+        isRecording = true
+    }
+
+    func stopRecording() {
+        datasetWriter?.finalizeProject()
+        datasetWriter = nil
+        isRecording = false
     }
     
     // MARK: - Private Image Processing and Saving

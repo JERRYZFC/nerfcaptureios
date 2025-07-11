@@ -852,25 +852,6 @@ def rgbd_slam(config: dict):
                     wandb_mapping_step = report_loss(losses, wandb_run, wandb_mapping_step, mapping=True)
                 # Backprop
                 loss.backward()
-
-                # Densification Gradients
-                if config['mapping']['use_gaussian_splatting_densification']:
-                    if seperate_densification_res:
-                        if selected_rand_keyframe_idx == -1:
-                            densify_iter_color, densify_iter_depth, _, _ = densify_dataset[time_idx]
-                        else:
-                            densify_iter_color, densify_iter_depth, _, _ = densify_dataset[keyframe_list[selected_rand_keyframe_idx]['id']]
-                        densify_iter_color = densify_iter_color.permute(2, 0, 1) / 255
-                        densify_iter_depth = densify_iter_depth.permute(2, 0, 1)
-                        densify_iter_data = {'cam': densify_cam, 'im': densify_iter_color, 'depth': densify_iter_depth, 'id': iter_time_idx, 
-                                            'intrinsics': densify_intrinsics, 'w2c': first_frame_w2c, 'iter_gt_w2c_list': iter_gt_w2c}
-                    else:
-                        densify_iter_data = iter_data
-                    densify_loss, variables, _ = get_loss(params, densify_iter_data, variables, iter_time_idx, config['mapping']['loss_weights'],
-                                                    config['mapping']['use_sil_for_loss'], config['mapping']['sil_thres'],
-                                                    config['mapping']['use_l1'], config['mapping']['ignore_outlier_depth_loss'], mapping=True)
-                    densify_loss.backward()
-
                 with torch.no_grad():
                     # Prune Gaussians
                     if config['mapping']['prune_gaussians']:

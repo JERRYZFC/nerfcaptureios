@@ -10,8 +10,6 @@ import UIKit
 import tiff_ios
 
 class ARViewModel: NSObject, ARSessionDelegate, ObservableObject {
-    private var latestDepthMap: CVPixelBuffer?
-    private var latestImage: CVPixelBuffer?
     @Published var processedDepthImage: UIImage?
     @Published var processedConfidenceImage: UIImage?
     @Published var showDepthMap: Bool = true
@@ -151,60 +149,6 @@ class ARViewModel: NSObject, ARSessionDelegate, ObservableObject {
 
         DispatchQueue.main.async { [weak self] in
             self?.processedConfidenceImage = UIImage(cgImage: cgImage).rotate(radians: .pi/2)
-        }
-    }
-    
-    private func writeDepthMapToTIFF(depthMap: CVPixelBuffer, url: URL) -> Bool {
-        let width = CVPixelBufferGetWidth(depthMap)
-        let height = CVPixelBufferGetHeight(depthMap)
-        
-        CVPixelBufferLockBaseAddress(depthMap, .readOnly)
-        defer { CVPixelBufferUnlockBaseAddress(depthMap, .readOnly) }
-        
-        guard let baseAddress = CVPixelBufferGetBaseAddress(depthMap) else { return false }
-        let bytesPerRow = CVPixelBufferGetBytesPerRow(depthMap)
-        
-        guard let rasters = TIFFRasters(width: Int32(width), andHeight: Int32(height), andSamplesPerPixel: 1, andSingleBitsPerSample: 32) else { return false }
-        
-        for y in 0..<height {
-            let pixelBytes = baseAddress.advanced(by: y * bytesPerRow)
-            let pixelBuffer = UnsafeBufferPointer<Float>(start: pixelBytes.assumingMemoryBound(to: Float.self), count: width)
-            for x in 0..<width {
-                rasters.setFirstPixelSampleAtX(Int32(x), andY: Int32(y), withValue: NSDecimalNumber(value: pixelBuffer[x]))
-            }
-        }
-        
-        let rowsPerStrip = UInt16(rasters.calculateRowsPerStrip(withPlanarConfiguration: Int32(TIFF_PLANAR_CONFIGURATION_CHUNKY)))
-        
-        guard let directory = TIFFFileDirectory() else { return false }
-        directory.setImageWidth(UInt16(width))
-        directory.setImageHeight(UInt16(height))
-        directory.setBitsPerSampleAsSingleValue(32)
-        directory.setCompression(UInt16(TIFF_COMPRESSION_NO))
-        directory.setPhotometricInterpretation(UInt16(TIFF_PHOTOMETRIC_INTERPRETATION_BLACK_IS_ZERO))
-        directory.setSamplesPerPixel(1)
-        directory.setRowsPerStrip(rowsPerStrip)
-        directory.setPlanarConfiguration(UInt16(TIFF_PLANAR_CONFIGURATION_CHUNKY))
-        directory.setSampleFormatAsSingleValue(UInt16(TIFF_SAMPLE_FORMAT_FLOAT))
-        directory.writeRasters = rasters
-        
-        guard let tiffImage = TIFFImage() else { return false }
-        tiffImage.addFileDirectory(directory)
-        
-        TIFFWriter.writeTiff(withFile: url.path, andImage: tiffImage)
-        return true
-    }
-
-    private func saveImage(image: CVPixelBuffer, url: URL) {
-        let ciImage = CIImage(cvPixelBuffer: image)
-        let context = CIContext()
-        if let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
-           let jpegData = context.jpegRepresentation(of: ciImage, colorSpace: colorSpace, options: [:]) {
-            do {
-                try jpegData.write(to: url)
-            } catch {
-                print("Failed to save image: \(error)")
-            }
         }
     }
 }

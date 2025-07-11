@@ -5,55 +5,71 @@
 //  Created by iori on 2024/11/27.
 //
 
-import SwiftUICore
 import SwiftUI
 
 struct CaptureButton: View {
-    static let outerDiameter: CGFloat = 80
-    static let strokeWidth: CGFloat = 4
-    static let innerPadding: CGFloat = 10
-    static let innerDiameter: CGFloat = CaptureButton.outerDiameter - CaptureButton.strokeWidth - CaptureButton.innerPadding
-    static let rootTwoOverTwo: CGFloat = CGFloat(2.0.squareRoot() / 2.0)
-    static let squareDiameter: CGFloat = CaptureButton.innerDiameter * CaptureButton.rootTwoOverTwo - CaptureButton.innerPadding
-    
     @ObservedObject var model: ARViewModel
-    
-    init(model: ARViewModel) {
-        self.model = model
-    }
     
     var body: some View {
         Button(action: {
+            // Provide haptic feedback on tap
             let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
             impactFeedback.impactOccurred()
             
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
-                if model.isRecording {
-                    model.stopRecording()
-                } else {
-                    model.startRecording()
-                }
+            // Toggle recording state
+            if model.isRecording {
+                model.stopRecording()
+            } else {
+                model.startRecording()
             }
         }) {
             ZStack {
-                // Outer ring
+                // Outer ring with gradient and shadow
                 Circle()
-                    .strokeBorder(Color.white, lineWidth: CaptureButton.strokeWidth)
-                    .frame(width: CaptureButton.outerDiameter, height: CaptureButton.outerDiameter)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [Color.white, Color.white.opacity(0.8)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 4
+                    )
+                    .frame(width: 80, height: 80)
+                    .shadow(color: model.isRecording ? Color.red.opacity(0.5) : Color.white.opacity(0.3), radius: 8, x: 0, y: 4)
                 
-                // Inner shape that animates based on recording state
+                // Inner shape that animates between circle and square
                 if model.isRecording {
-                    RoundedRectangle(cornerRadius: CaptureButton.squareDiameter / 4)
+                    RoundedRectangle(cornerRadius: 12)
                         .fill(Color.red)
-                        .frame(width: CaptureButton.squareDiameter, height: CaptureButton.squareDiameter)
-                        .transition(.scale)
+                        .frame(width: 35, height: 35)
+                        .transition(.scale.combined(with: .opacity))
                 } else {
                     Circle()
-                        .fill(Color.white)
-                        .frame(width: CaptureButton.innerDiameter, height: CaptureButton.innerDiameter)
-                        .transition(.scale)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.white, Color.gray.opacity(0.9)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 68, height: 68)
+                        .transition(.scale.combined(with: .opacity))
+                }
+                
+                // Pulsing effect when recording
+                if model.isRecording {
+                    Circle()
+                        .stroke(Color.red, lineWidth: 2)
+                        .frame(width: 80, height: 80)
+                        .scaleEffect(1.2)
+                        .opacity(0)
+                        .animation(
+                            .easeInOut(duration: 1.5).repeatForever(autoreverses: false),
+                            value: model.isRecording
+                        )
                 }
             }
         }
+        .animation(.spring(response: 0.4, dampingFraction: 0.6), value: model.isRecording)
     }
 }

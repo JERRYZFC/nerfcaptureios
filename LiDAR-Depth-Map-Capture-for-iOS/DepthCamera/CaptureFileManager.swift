@@ -8,29 +8,41 @@
 import Foundation
 import UIKit
 import SwiftUI
+import Zip
 
 // MARK: - Data Models
 struct CaptureItem: Identifiable {
     let id = UUID()
-    let timestamp: Date
-    let depthURL: URL
-    let imageURL: URL
-    let visualDepthURL: URL? // URL for the high-contrast visual depth map
+    let projectURL: URL
     var thumbnail: UIImage?
+    var frameCount: Int
+    
+    var name: String {
+        return projectURL.lastPathComponent
+    }
+    
+    var creationDate: Date {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: projectURL.path)
+        return attributes?[.creationDate] as? Date ?? Date()
+    }
     
     var formattedDate: String {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
-        return formatter.string(from: timestamp)
+        return formatter.string(from: creationDate)
     }
     
     var fileSize: String {
-        let depthSize = (try? FileManager.default.attributesOfItem(atPath: depthURL.path)[.size] as? Int) ?? 0
-        let imageSize = (try? FileManager.default.attributesOfItem(atPath: imageURL.path)[.size] as? Int) ?? 0
-        let visualDepthSize = (try? visualDepthURL.flatMap { try? FileManager.default.attributesOfItem(atPath: $0.path)[.size] as? Int }) ?? 0
-        let totalSize = depthSize + imageSize + visualDepthSize
-        return ByteCountFormatter.string(fromByteCount: Int64(totalSize), countStyle: .file)
+        guard let enumerator = FileManager.default.enumerator(at: projectURL, includingPropertiesForKeys: [.totalFileSizeKey, .fileSizeKey]),
+              let filePaths = enumerator.allObjects as? [URL] else {
+            return "0 KB"
+        }
+        let totalSize = filePaths.reduce(0) { (result, url) -> Int64 in
+            let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
+            return result + size
+        }
+        return ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file)
     }
 }
 
@@ -54,56 +66,40 @@ class CaptureFileManager: ObservableObject {
             var items: [CaptureItem] = []
             
             do {
-                let dateDirectories = try FileManager.default.contentsOfDirectory(
+                let projectDirectories = try FileManager.default.contentsOfDirectory(
                     at: self.documentsDirectory,
-                    includingPropertiesForKeys: [.isDirectoryKey],
+                    includingPropertiesForKeys: [.isDirectoryKey, .creationDateKey],
                     options: [.skipsHiddenFiles]
                 )
                 
-                for dateDir in dateDirectories {
-                    let isDirectory = (try? dateDir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-                    if !isDirectory { continue }
+                for projectDir in projectDirectories {
+                    let isDirectory = (try? projectDir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+                    let transformsURL = projectDir.appendingPathComponent("transforms.json")
                     
-                    let files = try FileManager.default.contentsOfDirectory(
-                        at: dateDir,
-                        includingPropertiesForKeys: [.creationDateKey],
-                        options: [.skipsHiddenFiles]
-                    )
-                    
-                    var fileGroups: [String: [URL]] = [:]
-                    for file in files {
-                        let filename = file.lastPathComponent
-                        if let timestampEnd = filename.firstIndex(of: "_") {
-                            let timestamp = String(filename[..<timestampEnd])
-                            fileGroups[timestamp, default: []].append(file)
-                        }
-                    }
-                    
-                    for (timestamp, urls) in fileGroups {
-                        guard let depthURL = urls.first(where: { $0.pathExtension == "tiff" }),
-                              let imageURL = urls.first(where: { $0.pathExtension == "jpg" }) else {
-                            continue
+                    // A valid project directory must contain transforms.json
+                    if isDirectory && FileManager.default.fileExists(atPath: transformsURL.path) {
+                        
+                        // Read manifest to get frame count
+                        var frameCount = 0
+                        if let data = try? Data(contentsOf: transformsURL),
+                           let manifest = try? JSONDecoder().decode(Manifest.self, from: data) {
+                            frameCount = manifest.frames.count
                         }
                         
-                        // Find the visual depth map, which is optional for backward compatibility
-                        let visualDepthURL = urls.first(where: { $0.lastPathComponent.contains("_depth_visual.png") })
-                        
-                        let timestampDouble = Double(timestamp) ?? 0
-                        let date = Date(timeIntervalSince1970: timestampDouble)
-                        
-                        let thumbnail = self.generateThumbnail(from: imageURL)
+                        // Generate thumbnail from the first image
+                        let firstImageURL = projectDir.appendingPathComponent("images/0.jpg")
+                        let thumbnail = self.generateThumbnail(from: firstImageURL)
                         
                         items.append(CaptureItem(
-                            timestamp: date,
-                            depthURL: depthURL,
-                            imageURL: imageURL,
-                            visualDepthURL: visualDepthURL,
-                            thumbnail: thumbnail
+                            projectURL: projectDir,
+                            thumbnail: thumbnail,
+                            frameCount: frameCount
                         ))
                     }
                 }
                 
-                items.sort { $0.timestamp > $1.timestamp }
+                // Sort by date (newest first)
+                items.sort { $0.creationDate > $1.creationDate }
                 
                 DispatchQueue.main.async {
                     self.captures = items
@@ -120,35 +116,40 @@ class CaptureFileManager: ObservableObject {
     
     func deleteCapture(_ capture: CaptureItem) {
         do {
-            try FileManager.default.removeItem(at: capture.depthURL)
-            try FileManager.default.removeItem(at: capture.imageURL)
-            if let visualURL = capture.visualDepthURL {
-                try FileManager.default.removeItem(at: visualURL)
-            }
-            
+            try FileManager.default.removeItem(at: capture.projectURL)
+            // Remove from array
             captures.removeAll { $0.id == capture.id }
-            
-            let directory = capture.depthURL.deletingLastPathComponent()
-            if let contents = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil), contents.isEmpty {
-                try FileManager.default.removeItem(at: directory)
-            }
         } catch {
             print("Error deleting capture: \(error)")
         }
     }
     
-    func shareCapture(_ capture: CaptureItem) -> [Any] {
-        var itemsToShare: [Any] = [capture.imageURL, capture.depthURL]
-        if let visualURL = capture.visualDepthURL {
-            itemsToShare.append(visualURL)
+    func shareCapture(_ capture: CaptureItem, completion: @escaping (URL?) -> Void) {
+        DispatchQueue.global(qos: .background).async {
+            do {
+                let zipFilePath = self.documentsDirectory.appendingPathComponent("\(capture.name).zip")
+                // Ensure no old zip file exists
+                if FileManager.default.fileExists(atPath: zipFilePath.path) {
+                    try FileManager.default.removeItem(at: zipFilePath)
+                }
+                
+                try Zip.zipFiles(paths: [capture.projectURL], zipFilePath: zipFilePath, password: nil, progress: nil)
+                DispatchQueue.main.async {
+                    completion(zipFilePath)
+                }
+            } catch {
+                print("Error creating zip file: \(error)")
+                DispatchQueue.main.async {
+                    completion(nil)
+                }
+            }
         }
-        return itemsToShare
     }
     
     private func generateThumbnail(from imageURL: URL) -> UIImage? {
         guard let image = UIImage(contentsOfFile: imageURL.path) else { return nil }
         
-        let size = CGSize(width: 100, height: 100)
+        let size = CGSize(width: 150, height: 150)
         UIGraphicsBeginImageContextWithOptions(size, false, 0.0)
         image.draw(in: CGRect(origin: .zero, size: size))
         let thumbnail = UIGraphicsGetImageFromCurrentImageContext()

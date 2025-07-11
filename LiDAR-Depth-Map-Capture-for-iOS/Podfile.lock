@@ -1,16 +1,20 @@
 PODS:
   - tiff-ios (4.0.2)
+  - Zip (2.1.2)
 
 DEPENDENCIES:
   - tiff-ios (~> 4.0.1)
+  - Zip (~> 2.1)
 
 SPEC REPOS:
   trunk:
     - tiff-ios
+    - Zip
 
 SPEC CHECKSUMS:
   tiff-ios: 1ad6750cd8bb3db75bd2977e40145813389786b9
+  Zip: b3fef584b147b6e582b2256a9815c897d60ddc67
 
-PODFILE CHECKSUM: baea43f676cfd7b3a853f887b5851cca628432d7
+PODFILE CHECKSUM: e5854aaeb44dd331829bd944b8e24c8c851c6762
 
-COCOAPODS: 1.15.2
+COCOAPODS: 1.16.2

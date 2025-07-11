@@ -81,27 +81,61 @@ class DatasetWriter {
     }
 
     func finalizeProject() {
-        guard manifest != nil else {
+        guard let manifest = manifest else {
             print("Manifest is nil, cannot finalize project.")
             return
         }
         
         let transformsURL = projectURL.appendingPathComponent("transforms.json")
         
+        // Create a temporary struct that matches the expected flat JSON structure
+        struct JSONRoot: Codable {
+            var flX: Float
+            var flY: Float
+            var cX: Float
+            var cY: Float
+            var w: Int
+            var h: Int
+            var integerDepthScale: Float
+            var frames: [Frame]
+
+            enum CodingKeys: String, CodingKey {
+                case flX = "fl_x"
+                case flY = "fl_y"
+                case cX = "cx"
+                case cY = "cy"
+                case w
+                case h
+                case integerDepthScale = "integer_depth_scale"
+                case frames
+            }
+        }
+        
+        let root = JSONRoot(
+            flX: manifest.flX,
+            flY: manifest.flY,
+            cX: manifest.cX,
+            cY: manifest.cY,
+            w: manifest.w,
+            h: manifest.h,
+            integerDepthScale: manifest.integerDepthScale,
+            frames: manifest.frames
+        )
+        
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
         
         do {
-            let jsonData = try encoder.encode(manifest)
+            let jsonData = try encoder.encode(root)
             try jsonData.write(to: transformsURL)
-            print("transforms.json saved successfully.")
+            print("transforms.json saved successfully with the correct flat structure.")
         } catch {
             print("Error writing transforms.json: \(error)")
         }
         
         // Reset for next recording
         frameCount = 0
-        manifest = nil
+        self.manifest = nil
         projectURL = nil
         imagesURL = nil
     }

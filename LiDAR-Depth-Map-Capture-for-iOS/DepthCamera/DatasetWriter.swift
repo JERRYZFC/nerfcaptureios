@@ -32,7 +32,8 @@ class DatasetWriter {
     }
 
     func addFrame(frame: ARFrame) {
-        guard let image = frame.capturedImage, let depthMap = frame.sceneDepth?.depthMap else { return }
+        let image = frame.capturedImage
+        guard let depthMap = frame.sceneDepth?.depthMap else { return }
 
         // Initialize manifest with camera intrinsics from the first frame
         if manifest == nil {

@@ -7,7 +7,7 @@
 
 import SwiftUI
 import CoreGraphics
-import ImageIO
+import tiff_ios
 
 struct DepthMapDetailView: View {
     let depthURL: URL
@@ -67,7 +67,7 @@ struct DepthMapDetailView: View {
                                 Text("Depth Distance")
                                     .font(.caption)
                                     .foregroundColor(.gray)
-                                Text(String(format: "%.2f m", depth))
+                                Text(String(format: "%.3f m", depth))
                                     .font(.title2)
                                     .fontWeight(.bold)
                                     .foregroundColor(.white)
@@ -105,110 +105,99 @@ struct DepthMapDetailView: View {
     
     private func loadDepthData() {
         DispatchQueue.global(qos: .userInitiated).async {
-            // Prioritize the visual PNG for display
-            let displayURL = depthURL.deletingPathExtension().appendingPathExtension("png")
-            var imageToShow: UIImage?
-
-            if FileManager.default.fileExists(atPath: displayURL.path),
-               let image = UIImage(contentsOfFile: displayURL.path) {
-                imageToShow = image
-            } else if let image = UIImage(contentsOfFile: depthURL.path) {
-                // Fallback to TIFF if visual PNG doesn't exist
-                imageToShow = image
+            guard let tiffImage = TIFFReader.readTiff(fromFile: depthURL.path),
+                  let directory = tiffImage.fileDirectory(),
+                  let rasters = directory.readRasters() else {
+                print("Failed to read TIFF file at \(depthURL.path)")
+                return
             }
+            
+            let width = Int(rasters.width)
+            let height = Int(rasters.height)
+            var loadedDepthData = Array(repeating: Array(repeating: Float(0), count: width), count: height)
+            
+            // Read the raw float values from the TIFF file
+            for y in 0..<height {
+                for x in 0..<width {
+                    if let value = rasters.pixelSample(atX: Int32(x), andY: Int32(y))?.floatValue {
+                        loadedDepthData[y][x] = value
+                    }
+                }
+            }
+            
+            // Create a high-contrast visual representation for the preview
+            let visualImage = createVisualDepthImage(from: loadedDepthData, width: width, height: height)
             
             DispatchQueue.main.async {
-                self.depthImage = imageToShow
+                self.depthData = loadedDepthData
+                self.depthImage = visualImage
             }
-            
-            // Always load the raw data from TIFF for depth value picking
-            loadDepthValuesFromTIFF()
         }
     }
     
-    private func loadDepthValuesFromTIFF() {
-        guard let imageSource = CGImageSourceCreateWithURL(depthURL as CFURL, nil),
-              let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
-            return
-        }
-        
-        let width = cgImage.width
-        let height = cgImage.height
-        
-        // TIFFメタデータから深度情報を取得する試み
-        if let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [String: Any] {
-            print("TIFF Properties: \(properties)")
-        }
-        
-        // 簡易的な実装：グレースケール値から深度を推定
-        // 実際のTIFF深度データの読み取りにはより詳細な実装が必要
-        depthData = Array(repeating: Array(repeating: Float(0), count: width), count: height)
-        
-        // ビットマップコンテキストを作成してピクセルデータを取得
-        let colorSpace = CGColorSpaceCreateDeviceGray()
-        let bytesPerPixel = 1
-        let bytesPerRow = bytesPerPixel * width
-        let bitsPerComponent = 8
-        
-        var pixelData = [UInt8](repeating: 0, count: width * height)
-        
-        guard let context = CGContext(data: &pixelData,
-                                    width: width,
-                                    height: height,
-                                    bitsPerComponent: bitsPerComponent,
-                                    bytesPerRow: bytesPerRow,
-                                    space: colorSpace,
-                                    bitmapInfo: CGImageAlphaInfo.none.rawValue) else {
-            return
-        }
-        
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-        
-        // グレースケール値を深度値に変換（0-5メートルの範囲と仮定）
+    private func createVisualDepthImage(from data: [[Float]], width: Int, height: Int) -> UIImage? {
+        var normalizedData = [UInt8](repeating: 0, count: width * height * 4)
+
         for y in 0..<height {
             for x in 0..<width {
-                let pixelIndex = y * width + x
-                let grayValue = Float(pixelData[pixelIndex]) / 255.0
-                depthData[y][x] = grayValue * 5.0 // 0-5メートルの範囲にマッピング
+                let depth = data[y][x]
+                // Normalize to 0-5m range for consistent, high-contrast visualization
+                let normalizedDepth = min(max(depth / 5.0, 0.0), 1.0)
+                let pixel = UInt8(normalizedDepth * 255.0)
+                
+                let index = (y * width + x) * 4
+                normalizedData[index] = pixel
+                normalizedData[index + 1] = pixel
+                normalizedData[index + 2] = pixel
+                normalizedData[index + 3] = 255
             }
         }
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+        
+        guard let context = CGContext(
+            data: &normalizedData,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo
+        ),
+        let cgImage = context.makeImage() else { return nil }
+
+        return UIImage(cgImage: cgImage)
     }
     
     private func updateDepthValue(at location: CGPoint, in viewSize: CGSize) {
-        guard let image = depthImage,
-              !depthData.isEmpty else { return }
+        guard let image = depthImage, !depthData.isEmpty else { return }
         
         let imageAspectRatio = image.size.width / image.size.height
         let viewAspectRatio = viewSize.width / viewSize.height
         
         var imageFrame: CGRect
         if imageAspectRatio > viewAspectRatio {
-            // 画像の幅に合わせる
             let height = viewSize.width / imageAspectRatio
             imageFrame = CGRect(x: 0, y: (viewSize.height - height) / 2, width: viewSize.width, height: height)
         } else {
-            // 画像の高さに合わせる
             let width = viewSize.height * imageAspectRatio
             imageFrame = CGRect(x: (viewSize.width - width) / 2, y: 0, width: width, height: viewSize.height)
         }
         
-        // タップ位置を画像座標に変換
-        let normalizedX = (location.x - imageFrame.origin.x) / imageFrame.width
-        let normalizedY = (location.y - imageFrame.origin.y) / imageFrame.height
-        
-        // 範囲チェック
-        guard normalizedX >= 0, normalizedX <= 1,
-              normalizedY >= 0, normalizedY <= 1 else {
+        guard imageFrame.contains(location) else {
+            self.depthValue = nil
             return
         }
         
-        // ピクセル座標に変換
+        let normalizedX = (location.x - imageFrame.origin.x) / imageFrame.width
+        let normalizedY = (location.y - imageFrame.origin.y) / imageFrame.height
+        
         let pixelX = Int(normalizedX * CGFloat(depthData[0].count))
         let pixelY = Int(normalizedY * CGFloat(depthData.count))
         
-        // 境界チェック
-        guard pixelY < depthData.count,
-              pixelX < depthData[pixelY].count else {
+        guard pixelY >= 0, pixelY < depthData.count,
+              pixelX >= 0, pixelX < depthData[pixelY].count else {
             return
         }
         
@@ -221,19 +210,16 @@ struct CrosshairView: View {
     
     var body: some View {
         ZStack {
-            // 水平線
             Rectangle()
                 .fill(Color.white.opacity(0.8))
                 .frame(width: 40, height: 1)
                 .position(location)
             
-            // 垂直線
             Rectangle()
                 .fill(Color.white.opacity(0.8))
                 .frame(width: 1, height: 40)
                 .position(location)
             
-            // 中心点
             Circle()
                 .fill(Color.clear)
                 .stroke(Color.white, lineWidth: 2)

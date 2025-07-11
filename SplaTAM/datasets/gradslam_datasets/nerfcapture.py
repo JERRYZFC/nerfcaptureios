@@ -90,7 +90,9 @@ class NeRFCaptureDataset(GradSLAMDataset):
             frame_metadata = self.frames_metadata[self.filepath_index_mapping.get(image_name)]
             # Get path of image and depth
             color_path = f"{base_path}/{image_name}"
-            depth_path = f"{base_path}/{image_name.replace('rgb', 'depth')}"
+            # Correctly form the depth path by replacing the folder and the extension
+            depth_filename = os.path.splitext(os.path.basename(image_name))[0] + ".tiff"
+            depth_path = os.path.join(base_path, "depth", depth_filename)
             color_paths.append(color_path)
             depth_paths.append(depth_path)
             # Get pose of image in GradSLAM format

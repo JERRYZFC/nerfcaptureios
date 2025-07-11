@@ -303,6 +303,10 @@ class GradSLAMDataset(torch.utils.data.Dataset):
             depth = np.asarray(imageio.imread(depth_path), dtype=np.int64)
         elif ".exr" in depth_path:
             depth = readEXR_onlydepth(depth_path)
+        elif ".tiff" in depth_path:
+            depth = np.asarray(imageio.imread(depth_path), dtype=np.float32)
+        else:
+            raise ValueError(f"Unsupported depth file format for path: {depth_path}")
 
         K = as_intrinsics_matrix([self.fx, self.fy, self.cx, self.cy])
         if self.distortion is not None:

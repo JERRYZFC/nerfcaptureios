@@ -5,6 +5,9 @@ experiments/
 results/
 wandb/
 250711135835/*
+nerf250711143013*/*
+2507*/*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
